@@ -28,9 +28,23 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10);
 const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '120', 10);
 
+// trust proxy: liczba realnych proxy PRZED gatewayem (hop-count), NIE 'true'.
+//   'true' = slepe zaufanie => klient moze podstawic dowolny X-Forwarded-For,
+//   przez co spoofuje req.ip (obejscie rate-limitu + zapychanie mapy 'hits' = memory-DoS).
+//   Ustaw TRUST_PROXY na liczbe hopow (np. 1 dla pojedynczego LB/reverse-proxy),
+//   albo na liste CIDR proxy (np. '10.0.0.0/8,127.0.0.1'). Dla braku proxy -> 0.
+//   Wartosc ZALEZY od Twojej topologii (ile proxy stoi przed gatewayem).
+const TRUST_PROXY_RAW = process.env.TRUST_PROXY || '1';
+// Jesli TRUST_PROXY to czysta liczba -> hop-count; w innym wypadku traktuj jako
+// liste CIDR/adresow (Express akceptuje string rozdzielony przecinkami).
+const TRUST_PROXY = /^\d+$/.test(TRUST_PROXY_RAW.trim())
+  ? parseInt(TRUST_PROXY_RAW, 10)
+  : TRUST_PROXY_RAW;
+
 const app = express();
 app.disable('x-powered-by');
-app.set('trust proxy', true);
+// NIE 'true' (spoofowalny X-Forwarded-For). Domyslnie 1 hop; dostosuj przez TRUST_PROXY.
+app.set('trust proxy', TRUST_PROXY);
 
 // --- CORS ---
 app.use((req, res, next) => {
@@ -49,12 +63,34 @@ app.use((req, res, next) => {
 });
 
 // --- Rate-limit (stub, in-memory) ---
+// TODO(prod): to jest tylko STUB. Do produkcji uzyj `express-rate-limit`
+//   (opcjonalnie z backendem redis/`rate-limit-redis`) albo warstwy edge (WAF/LB).
+//   Stub trzyma stan w pamieci jednego procesu (nie dziala poprawnie multi-instance)
+//   i nie ma twardej ochrony przed rozproszonym atakiem. Patrz gateway/README.md.
 const hits = new Map(); // ip -> { count, resetAt }
+
+// Sweep wygaslych wpisow: bez tego mapa 'hits' rosnie nieograniczenie przy duzej
+// liczbie unikalnych IP (memory-DoS). Okresowo usuwamy przeterminowane rekordy.
+// unref() -> ten timer nie blokuje zamkniecia procesu (istotne dla testow/CI).
+const RATE_LIMIT_SWEEP_MS = parseInt(
+  process.env.RATE_LIMIT_SWEEP_MS || String(RATE_LIMIT_WINDOW_MS),
+  10
+);
+const sweepTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [ip, rec] of hits) {
+    if (now > rec.resetAt) hits.delete(ip);
+  }
+}, RATE_LIMIT_SWEEP_MS);
+if (typeof sweepTimer.unref === 'function') sweepTimer.unref();
+
 app.use((req, res, next) => {
   const now = Date.now();
   const ip = req.ip || 'unknown';
   let rec = hits.get(ip);
   if (!rec || now > rec.resetAt) {
+    // Czyszczenie przy dostepie (dodatkowo do okresowego sweepu): odswiez/utworz
+    // rekord dla biezacego IP zamiast trzymac przeterminowany wpis.
     rec = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
     hits.set(ip, rec);
   }
