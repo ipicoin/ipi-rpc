@@ -1,16 +1,24 @@
-# IPI RPC Research Client
+# Cosmos RPC Transport Research for IPI
 
-An experimental web client for comparing Cosmos gRPC-Web and gRPC-Gateway
-code-generation and query paths.
+Generated-client and browser comparison workspace for Cosmos gRPC-Web and
+gRPC-Gateway query paths.
 
-> **Status: inherited prototype.** This repository is not an IPI RPC service,
-> canonical SDK, or production wallet. Generated clients and configured
-> endpoints must be verified against the target protocol version.
+## What the source contains
+
+- a Cosmos, IBC, and CosmWasm protobuf tree under `proto/`;
+- separate generated TypeScript clients under `codegen_grpc_web/` and
+  `codegen_grpc_gateway/`;
+- generator scripts for both transports; and
+- Next.js comparison pages at `/grpc-web` and `/grpc-gateway`.
+
+The repository evaluates how equivalent Cosmos queries can be represented and
+called through two web-facing transports. It is not an RPC server, canonical IPI
+SDK, independently verifying light client, or configured IPI network client.
 
 ## Development
 
-The codebase uses an older Create Cosmos App / Next.js stack. Review and update
-its dependencies before exposing a deployment.
+This codebase derives from an older Create Cosmos App / Next.js example. Review
+its dependency and protocol versions before exposing a deployment.
 
 ```sh
 yarn
@@ -18,25 +26,29 @@ yarn dev
 yarn build
 ```
 
-Generate both client variants with:
+Regenerate both client trees with:
 
 ```sh
 yarn codegen
 ```
 
-The local application is served at `http://localhost:3000`; comparison pages
-are available under `/grpc-web` and `/grpc-gateway`.
+## Integration requirements
 
-## Verification priorities
+An IPI-integrated version needs pinned protobuf source revisions, reproducible
+generated output, configured and displayed chain/endpoint identity, equivalent
+response fixtures across transports, untrusted-response handling, and tests
+against a versioned public node interface.
 
-Contributions should pin protocol definitions, make the source revision of
-generated code reproducible, test equivalent responses across transports,
-display endpoint and chain identity, and handle untrusted RPC responses without
-misrepresenting them as verified state.
+## Development status
+
+**Integration research.** The client-generation surface is substantial but
+inherited from Hyperweb's `grpc-web-grpc-gateway` example, and no IPI-specific
+endpoint or schema delta is implemented. Generated clients are transport code,
+not proof that returned state is canonical or independently verified.
 
 ## Provenance and license
 
 This repository derives from Hyperweb Create Cosmos App's
 `grpc-web-grpc-gateway` example. See [UPSTREAM.md](UPSTREAM.md) for provenance
-and migration context. Upstream and IPI modifications are distributed under
-the [MIT License](LICENSE).
+and migration context. Upstream and IPI modifications are distributed under the
+[MIT License](LICENSE).
